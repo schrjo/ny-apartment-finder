@@ -10,25 +10,36 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _telegram_config() -> tuple[str | None, str | None, float]:
+def _telegram_chat_ids() -> List[str]:
+    raw = os.getenv("TELEGRAM_CHAT_IDS") or os.getenv("TELEGRAM_CHAT_ID") or ""
+    return [chat_id.strip() for chat_id in raw.split(",") if chat_id.strip()]
+
+
+def _telegram_config() -> tuple[str | None, List[str], float]:
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_ids = _telegram_chat_ids()
     delay = float(os.getenv("TELEGRAM_DELAY", "0.5"))
-    return bot_token, chat_id, delay
+    return bot_token, chat_ids, delay
 
 def _notify_telegram(listings: List[Dict]) -> bool:
     """Send notifications via Telegram bot API (one message per listing).
 
-    Requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars. Returns
+    Requires `TELEGRAM_BOT_TOKEN` and one of `TELEGRAM_CHAT_ID`/`TELEGRAM_CHAT_IDS`.
+    `TELEGRAM_CHAT_ID` may be a comma-separated list of IDs.
+
+    Returns
     True if at least one message was sent successfully.
     """
-    bot_token, chat_id, delay = _telegram_config()
-    if not (bot_token and chat_id):
+    bot_token, chat_ids, delay = _telegram_config()
+    if not (bot_token and chat_ids):
         return False
 
     sent = False
     errors = 0
-    for idx, l in enumerate(listings):
+    total_messages = len(listings) * len(chat_ids)
+    message_index = 0
+
+    for l in listings:
         title = l.get("title") or "(no title)"
         url = l.get("url") or ""
         source = l.get("source") or "listing"
@@ -38,23 +49,29 @@ def _notify_telegram(listings: List[Dict]) -> bool:
         parts.append(url)
         text = "\n".join(parts)
 
-        payload = {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        }
-        try:
-            r = requests.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", data=payload, timeout=10)
-            r.raise_for_status()
-            sent = True
-        except Exception as exc:
-            errors += 1
-            if errors == 1:
-                print(f"Telegram send failed: {exc}")
+        for chat_id in chat_ids:
+            payload = {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            }
+            try:
+                r = requests.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    data=payload,
+                    timeout=10,
+                )
+                r.raise_for_status()
+                sent = True
+            except Exception as exc:
+                errors += 1
+                if errors == 1:
+                    print(f"Telegram send failed (chat_id={chat_id}): {exc}")
 
-        if idx < len(listings) - 1 and delay > 0:
-            time.sleep(delay)
+            message_index += 1
+            if message_index < total_messages and delay > 0:
+                time.sleep(delay)
 
     return sent
 
@@ -67,8 +84,8 @@ def notify(listings: List[Dict]) -> None:
 
     telegram_sent = False
 
-    bot_token, chat_id, _ = _telegram_config()
-    if bot_token and chat_id:
+    bot_token, chat_ids, _ = _telegram_config()
+    if bot_token and chat_ids:
         telegram_sent = _notify_telegram(listings)
 
     if not telegram_sent:
