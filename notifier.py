@@ -42,11 +42,14 @@ def _notify_telegram(listings: List[Dict]) -> bool:
     for l in listings:
         title = l.get("title") or "(no title)"
         url = l.get("url") or ""
+        website_url = l.get("website_url") or ""
         source = l.get("source") or "listing"
         parts = [f"[{source}] <b>{title}</b>"]
         if l.get("price"):
             parts.append(f"Price: {l.get('price')}")
         parts.append(url)
+        if website_url:
+            parts.append(f"Website: {website_url}")
         text = "\n".join(parts)
 
         for chat_id in chat_ids:

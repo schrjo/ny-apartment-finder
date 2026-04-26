@@ -92,3 +92,33 @@ def test_fallback_prints_without_telegram(capsys, monkeypatch):
 
     assert "NEW LISTING:" in captured.out
     assert "Apt A" in captured.out
+
+
+def test_telegram_message_includes_website_url_when_present(monkeypatch):
+    calls = []
+
+    def fake_post(url, data=None, timeout=None, json=None):
+        calls.append((url, data, timeout))
+        return DummyResponse()
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "123456")
+    monkeypatch.setenv("TELEGRAM_DELAY", "0")
+    monkeypatch.setattr(notifier.requests, "post", fake_post)
+
+    notifier.notify(
+        [
+            {
+                "id": "a",
+                "title": "Emerson: 203 Legend Drive, Sleepy Hollow, NY 10591",
+                "url": "https://bit.ly/EmersonApplication",
+                "website_url": "https://www.settlementhousingfund.org/find-housing/",
+                "source": "Settlement Housing Fund",
+            }
+        ]
+    )
+
+    assert len(calls) == 1
+    _, payload, _ = calls[0]
+    assert "https://bit.ly/EmersonApplication" in payload["text"]
+    assert "Website: https://www.settlementhousingfund.org/find-housing/" in payload["text"]
